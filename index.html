@@ -198,7 +198,7 @@ async function callClaude(prompt, useSearch, maxTokens, useFetch) {
   };
   const tools = [];
   if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search" });
-  if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 8 });
+  if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 5, max_content_tokens: 6000 });
   if (tools.length > 0) body.tools = tools;
   const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
     method: "POST",
@@ -239,7 +239,9 @@ async function callClaudeAutoRetry(prompt, useSearch, maxTokens, attempt = 1, us
   } catch (e) {
     const isNonRetryable = e.errorType && NON_RETRYABLE_ERROR_TYPES.has(e.errorType);
     const isKnownTransient = e.errorType && TRANSIENT_ERROR_TYPES.has(e.errorType);
-    const maxAttempts = isKnownTransient ? 6 : 3;
+    // web_fetch를 쓰는 호출은 재시도할 때마다 웹검색+최대 여러 페이지 fetch를 통째로 다시 하므로
+    // 비용이 기하급수적으로 늘어남 → 재시도 횟수를 훨씬 보수적으로 제한
+    const maxAttempts = useFetch ? 2 : (isKnownTransient ? 6 : 3);
 
     if (isNonRetryable || attempt >= maxAttempts) throw e;
 
@@ -460,7 +462,7 @@ URL 선정 규칙 (매우 중요):
   ]
 }
 vendors는 정확히 4개입니다.`;
-  return callClaudeAutoRetry(prompt, true, 2800, 1, true);
+  return callClaudeAutoRetry(prompt, true, 4096, 1, true);
 }
 
 // AI가 예산 질문(budget_check)을 빠뜨렸을 경우를 대비한 안전장치.
