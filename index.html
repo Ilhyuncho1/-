@@ -449,39 +449,20 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
   return callClaudeAutoRetry(prompt, true, 4096);
 }
 
+// 판매처 비교: 이제 Claude의 web_fetch 도구로 페이지를 순차 열람하지 않고,
+// Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
+// (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
 async function generateVendorComparison(productName) {
-  const prompt = `"${productName}"을 판매하는 온라인 판매처 4곳을 찾으세요. (공식몰, 오픈마켓 등).
-URL에는 절대 제휴 파라미터(affid, ref 등)를 포함하지 말고 순수 원본 URL(Clean URL)만 수집하세요.
-
-구성 일치 규칙 (매우 중요):
-"${productName}"이라는 상품명 안에 개수나 세트 구성(예: "8개 세트", "단품", "4개입" 등)이 명시되어 있다면, 반드시 그 정확한 구성과 일치하는 상품만 찾으세요. 예를 들어 "8개 세트"를 찾는데 fetch로 열어보니 단품(1개)만 판매하는 페이지라면 그건 다른 상품이므로 제외하세요. 가격도 반드시 그 정확한 구성 기준의 가격이어야 합니다 — 단품 가격을 세트 가격인 것처럼, 혹은 그 반대로 혼동해서 적으면 절대 안 됩니다.
-
-작업 순서 (매우 중요, 반드시 이 순서로 진행):
-1단계: 웹 검색으로 "${productName}"을 판매할 만한 판매처 후보 URL들을 찾으세요.
-2단계: 후보로 찾은 URL은 상세 페이지든 검색결과 페이지든 예외 없이 반드시 웹 페이지 열람(fetch) 도구로 실제로 열어서 확인하세요. "검색결과 페이지니까 안전하다"고 판단해서 확인을 생략하지 마세요 — 검색결과 페이지도 존재하지 않거나 비어있을 수 있습니다. 검색 결과 스니펫만 보고 판단하지 말고, 페이지를 직접 열어 다음을 확인하세요: (a) 페이지가 정상적으로 열리는지(404, 오류 페이지, 접속 제한/차단 안내 페이지가 아닌지), (b) 그 페이지에 실제로 "${productName}"(또는 매우 근접한 동일 상품, 또는 검색결과 목록)이 표시되어 있는지, (c) 판매 가능 상태인지.
-"판매 불가능"으로 판단해야 하는 표현은 "품절", "재고없음", "일시품절", "Sold Out", "단종" 같은 명시적 표현뿐 아니라, "가격비교 중지 상품입니다", "상품이 없습니다", "판매가 종료되었습니다", "해당 페이지를 찾을 수 없습니다" 등 정확한 문구를 예측할 수 없는 다양한 변형이 있을 수 있습니다. 특정 단어 목록에 의존하지 말고, 페이지 내용을 읽고 "이 페이지에서 지금 이 상품을 실제로 살 수 있는가?"라는 기준으로 직접 판단하세요.
-3단계: 열람해서 실제로 확인이 된 URL만 최종 후보에 포함하세요. 열람 결과 문제가 있었다면(차단/오류/상품없음 등) 그 후보는 완전히 버리고 다른 판매처로 대체하세요. 시간/횟수 제약으로 일부를 못 열어봤다면 그 판매처는 최대한 제외하세요. 부득이하게 확인 안 된 URL을 넣어야 한다면 "fetched_verified": false로 정직하게 표시하세요.
-
-판매처 우선순위 규칙 (매우 중요):
-0-1. 네이버쇼핑, 다나와처럼 여러 판매처 가격을 모아 보여주는 "가격비교 중개 사이트"는 AI가 열람할 때와 실제 사용자가 클릭할 때 다르게 동작해(접속 차단 등) 신뢰도가 낮습니다. 가능하면 판매처(쇼핑몰) 자체 사이트나 오픈마켓(쿠팡, 11번가, G마켓 등) 상품 페이지를 우선하고, 가격비교 중개 사이트는 다른 대안이 정말 없을 때만 최후 수단으로 사용하세요.
-0-2. "${productName}"이 신품(새 제품/신차)이라면, 절대로 중고 거래 플랫폼(중고차 사이트, 중고나라, 당근마켓, 번개장터, 헬로마켓 등)을 판매처로 넣지 마세요. 반드시 제조사 공식몰, 공식 대리점, 또는 신품을 취급하는 온라인 쇼핑몰만 포함하세요.
-
-URL 선정 규칙 (매우 중요):
-1. 절대로 URL을 추측하거나 지어내지 마세요. 실제로 fetch 도구로 열어서 확인한 URL만 사용하세요.
-2. "${productName}" 상품 상세 페이지(구매 버튼이 바로 보이는 페이지)를 fetch로 직접 열어서 그 상품이 맞고 구매 가능하다고 확인한 경우에만 "url_type": "detail", "fetched_verified": true로 표시하세요.
-3. fetch로 열어봤는데 문제가 있으면(404, 차단, 다른 상품, 판매 불가 등) 절대로 그 URL을 상세 페이지로 쓰지 마세요. 대신 그 판매처 사이트 안에서 "${productName}"을 검색한 결과 페이지 URL을 만들어 fetch로 열람 확인한 뒤 "url_type": "search_results"로 표시하세요.
-4. 판단이 애매할 때는 무조건 검색결과 페이지를 선택하세요. 다만 검색결과 페이지도 반드시 열람해서 실제로 내용이 있는지 확인한 것이어야 합니다.
-5. 절대로 판매처의 단순 홈페이지(메인 화면) URL만 넣지 마세요.
-
-다른 설명 없이 JSON만 응답:
-{
-  "sort_basis": "정렬 기준 (예: 상품가+배송비 합산 최저가순)",
-  "vendors": [
-    {"name": "판매처명", "price_krw": "가격(배송비 포함여부)", "shipping_kr": "배송정책 요약", "as_kr": "AS/반품 정책 요약", "url": "제휴코드 없는 원본 URL", "url_type": "detail 또는 search_results", "stock_status": "in_stock 또는 uncertain 또는 likely_out", "fetched_verified": true 또는 false}
-  ]
-}
-vendors는 정확히 4개입니다.`;
-  return callClaudeAutoRetry(prompt, true, 8192, 1, true);
+  const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "vendor_compare", productName }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    throw new Error(`판매처 비교 실패: ${data.error}`);
+  }
+  return data;
 }
 
 // AI가 예산 질문(budget_check)을 빠뜨렸을 경우를 대비한 안전장치.
@@ -1364,8 +1345,8 @@ function AdaptiveAppraisalTest() {
                         </div>
                         {vendorLoading[i] && (
                           <div className="text-xs jbmono flex flex-col gap-1" style={{ color: C.gold }}>
-                            <span>판매처 페이지를 하나씩 직접 열어 재고·가격을 확인하는 중... ({vendorElapsed[i] || 0}초 경과)</span>
-                            <span style={{ color: C.textDim }}>정확도를 위해 각 판매처를 실제로 열람하고 있어요. 보통 30~60초 정도 걸릴 수 있습니다.</span>
+                            <span>판매처 페이지를 동시에 열어 재고·가격을 확인하는 중... ({vendorElapsed[i] || 0}초 경과)</span>
+                            <span style={{ color: C.textDim }}>보통 10~20초 정도 걸립니다.</span>
                           </div>
                         )}
                         {!vendorLoading[i] && vendorError[i] && !vendorData[i] && (
