@@ -358,6 +358,8 @@ async function generateRecommendation(category, buyerType, env, qa, ageRange, ge
     ? `\n이 사용자는 과거 유사 이력 ${fastTrackInfo.matched_count || 2}건을 바탕으로 "빠른 진단 모드"로 진행되었습니다. 최상위 필드로 "opening_line_kr"을 추가하세요: "${nickname ? `${nickname}님, ` : ""}[이 사람이 이 유형 제품에서 일관되게 중요시해온 것: ${fastTrackInfo.pattern_summary_kr || ""}]을(를) 중요시하는 당신께 추천하는 제품은" 으로 시작하는 자연스러운 1문장.`
     : `\n최상위 필드로 "opening_line_kr"은 null로 응답하세요 (빠른 진단 모드가 아니므로 사용 안 함).`;
 
+const newVsUsedInstruction = `\n신품/중고 구분이 존재하는 카테고리(자동차, 가전 일부 등)라면: 사용자의 답변이나 메모에서 "중고", "중고차", "리퍼", "리퍼비시" 등을 명시적으로 언급하지 않는 한, 무조건 신품(새 제품/신차) 기준으로만 추천하세요. 중고 거래 플랫폼이나 중고 매물은 절대 recommendations에 포함하지 마세요.`;
+
   const prompt = `당신은 광고·협찬·제휴 수수료를 절대 받지 않는 독립 제품 감정 전문가입니다. 
 "${category}" 구매 고민자(성향: ${buyerType}, ${profileNote}, 주거환경: ${env.size}, 가구형태: ${householdDesc})의 분석 정보입니다:
 ${qaText}
@@ -366,6 +368,7 @@ ${extraText}
 ${budgetInstruction}${historyNote}
 ${candidateInstruction}
 ${fastTrackInstruction}
+${newVsUsedInstruction}
 
 웹 검색으로 실제 사용자 후기를 찾되 협찬/광고 글은 철저히 제외하세요. 
 구매자의 부담을 줄여주는 정보(총 소유 비용 TCO 및 배우자/가족 설득 요약)를 포함하여 JSON으로 응답하세요:
@@ -398,15 +401,20 @@ async function generateVendorComparison(productName) {
   const prompt = `"${productName}"을 판매하는 온라인 판매처 4곳을 웹 검색으로 찾으세요. (공식몰, 오픈마켓 등).
 URL에는 절대 제휴 파라미터(affid, ref 등)를 포함하지 말고 순수 원본 URL(Clean URL)만 수집하세요.
 
+신품/중고 규칙 (매우 중요):
+0. "${productName}"이 신품(새 제품/신차)이라면, 절대로 중고 거래 플랫폼(중고차 사이트, 중고나라, 당근마켓, 번개장터, 헬로마켓 등)을 판매처로 넣지 마세요. 반드시 제조사 공식몰, 공식 대리점, 또는 신품을 취급하는 온라인 쇼핑몰(오픈마켓의 신품 카테고리 등)만 포함하세요.
+
 URL 선정 규칙 (매우 중요):
-1. 가장 우선순위는 "${productName}" 상품 상세 페이지(구매 버튼이 바로 보이는 페이지) 원본 URL입니다.
-2. 검색으로 정확한 상품 상세 페이지 URL을 확신할 수 없다면, 절대로 그 판매처의 홈페이지(메인 화면) URL을 넣지 마세요. 대신 그 판매처 사이트 안에서 "${productName}"을 검색한 결과 페이지 URL(예: 사이트 내 검색창에 상품명을 입력했을 때 나오는 목록 페이지 URL)을 넣으세요. 사용자가 링크를 눌렀을 때 최소한 관련 상품 목록이라도 바로 보여야 합니다.
-3. 상품 상세 페이지인지 검색결과 페이지인지 확신이 안 서면 "url_type" 필드에 "detail" 또는 "search_results" 중 하나로 명시하세요.
+1. 절대로 URL을 추측하거나 지어내지 마세요. 실제 웹 검색 결과에서 실제로 확인한 URL만 사용하세요.
+2. "${productName}" 상품 상세 페이지(구매 버튼이 바로 보이는 페이지) URL을 검색 결과에서 100% 확실하게 확인한 경우에만 "url_type": "detail"로 표시하고 그 URL을 넣으세요.
+3. 조금이라도 확신이 서지 않으면(페이지가 존재하는지 불확실, 검색 결과에 스니펫만 있고 실제 URL 구조를 못 봄, 오래된 정보일 수 있음 등) 절대로 상세 페이지 URL을 만들어내지 말고, 대신 그 판매처 사이트 안에서 "${productName}"을 검색한 결과 페이지 URL(사이트명 + 검색 파라미터 형태, 예: "https://www.판매처.com/search?query=상품명")로 대체하고 "url_type": "search_results"로 표시하세요.
+4. 판단이 애매할 때는 무조건 3번(검색결과 페이지)을 선택하세요. 안전한 쪽으로 판단하는 것이 원칙입니다. 존재하지 않는 페이지로 연결되는 것보다, 검색결과 페이지로 연결되는 것이 훨씬 낫습니다.
+5. 절대로 판매처의 단순 홈페이지(메인 화면) URL만 넣지 마세요.
 
 재고 확인 규칙 (매우 중요):
-4. 검색 결과나 페이지 내용에 "품절", "재고없음", "일시품절", "Sold Out", "단종" 같은 표현이 보이면 그 판매처는 최대한 제외하고 재고가 있어 보이는 다른 판매처로 대체하세요. 4곳 모두 이런 문제가 없는 곳으로 채우는 것이 최우선입니다.
-5. 그래도 재고 상태를 확신할 수 없는 판매처가 포함될 수밖에 없다면, "stock_status" 필드에 "in_stock"(재고 확인됨), "uncertain"(확신 불가), "likely_out"(품절 가능성 높음) 중 하나로 정직하게 표시하세요. 절대 무조건 "in_stock"으로 채우지 마세요.
-6. 이건 검색 시점 기준 정보이며 실시간 재고와 다를 수 있다는 점을 감안해 최대한 최근 정보를 우선하세요.
+6. 검색 결과나 페이지 내용에 "품절", "재고없음", "일시품절", "Sold Out", "단종" 같은 표현이 보이면 그 판매처는 최대한 제외하고 재고가 있어 보이는 다른 판매처로 대체하세요. 4곳 모두 이런 문제가 없는 곳으로 채우는 것이 최우선입니다.
+7. 그래도 재고 상태를 확신할 수 없는 판매처가 포함될 수밖에 없다면, "stock_status" 필드에 "in_stock"(재고 확인됨), "uncertain"(확신 불가), "likely_out"(품절 가능성 높음) 중 하나로 정직하게 표시하세요. 절대 무조건 "in_stock"으로 채우지 마세요.
+8. 이건 검색 시점 기준 정보이며 실시간 재고와 다를 수 있다는 점을 감안해 최대한 최근 정보를 우선하세요.
 
 다른 설명 없이 JSON만 응답:
 {
@@ -1282,6 +1290,10 @@ function AdaptiveAppraisalTest() {
 
                     {openVendor[i] && (
                       <div className="mt-2 p-3 rounded" style={{ backgroundColor: C.paper }}>
+                        <div className="text-xs mb-2 flex items-start gap-1.5" style={{ color: C.textDim }}>
+                          <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                          <span>AI가 검색으로 찾은 링크라 가끔 페이지가 없어졌거나 이동되었을 수 있어요. 안 열리면 판매처명으로 직접 검색해보세요.</span>
+                        </div>
                         {vendorLoading[i] && <div className="text-xs jbmono" style={{ color: C.gold }}>Clean URL 수집 중...</div>}
                         {!vendorLoading[i] && vendorError[i] && !vendorData[i] && (
                           <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.warn }}>
