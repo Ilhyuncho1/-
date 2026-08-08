@@ -190,20 +190,28 @@ function extractJson(text) {
   throw new Error("JSON 괄호가 맞지 않습니다");
 }
 
-async function callClaude(prompt, useSearch, maxTokens) {
+async function callClaude(prompt, useSearch, maxTokens, useFetch) {
   const body = {
     model: "claude-sonnet-4-6",
     max_tokens: maxTokens || 1500,
     messages: [{ role: "user", content: prompt }],
   };
-  if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+  const tools = [];
+  if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search" });
+  if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 6 });
+  if (tools.length > 0) body.tools = tools;
   const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (data.error) throw new Error(`API 오류: ${data.error.message || JSON.stringify(data.error)}`);
+  if (data.error) {
+    const err = new Error(`API 오류: ${data.error.message || JSON.stringify(data.error)}`);
+    err.errorType = data.error.type || null; // 예: permission_error, overloaded_error, rate_limit_error, authentication_error
+    err.httpStatus = res.status;
+    throw err;
+  }
   const textBlocks = (data.content || []).filter((b) => b.type === "text").map((b) => b.text);
   if (textBlocks.length === 0) throw new Error("응답에 텍스트가 없습니다");
 
@@ -220,15 +228,27 @@ async function callClaude(prompt, useSearch, maxTokens) {
   throw new Error(`JSON 파싱 실패: ${lastError?.message || "알 수 없는 오류"}`);
 }
 
-async function callClaudeAutoRetry(prompt, useSearch, maxTokens, attempt = 1) {
+// 재시도해도 소용없는 오류 (설정/권한 문제로, 다시 시도해도 똑같이 실패함) → 즉시 실패 처리
+const NON_RETRYABLE_ERROR_TYPES = new Set(["authentication_error", "not_found_error", "invalid_request_error"]);
+// 서버 쪽 순간적인 문제로 확인된 오류 → 더 적극적으로 재시도
+const TRANSIENT_ERROR_TYPES = new Set(["permission_error", "overloaded_error", "rate_limit_error", "api_error"]);
+
+async function callClaudeAutoRetry(prompt, useSearch, maxTokens, attempt = 1, useFetch) {
   try {
-    return await callClaude(prompt, useSearch, maxTokens);
+    return await callClaude(prompt, useSearch, maxTokens, useFetch);
   } catch (e) {
-    if (attempt >= 3) throw e;
+    const isNonRetryable = e.errorType && NON_RETRYABLE_ERROR_TYPES.has(e.errorType);
+    const isKnownTransient = e.errorType && TRANSIENT_ERROR_TYPES.has(e.errorType);
+    const maxAttempts = isKnownTransient ? 6 : 3;
+
+    if (isNonRetryable || attempt >= maxAttempts) throw e;
+
     const isTruncated = String(e.message || "").includes("max_tokens");
     const nextTokens = isTruncated ? Math.min(maxTokens * 2, 8192) : maxTokens;
-    await new Promise((r) => setTimeout(r, 900 * attempt));
-    return callClaudeAutoRetry(prompt, useSearch, nextTokens, attempt + 1);
+    // 알려진 일시적 오류는 조금 더 여유 있게 기다렸다가 재시도 (서버 쪽 순간 과부하가 풀릴 시간을 줌)
+    const backoff = (isKnownTransient ? 1200 : 900) * attempt;
+    await new Promise((r) => setTimeout(r, backoff));
+    return callClaudeAutoRetry(prompt, useSearch, nextTokens, attempt + 1, useFetch);
   }
 }
 
@@ -392,33 +412,38 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
 }
 
 async function generateVendorComparison(productName) {
-  const prompt = `"${productName}"을 판매하는 온라인 판매처 4곳을 웹 검색으로 찾으세요. (공식몰, 오픈마켓 등).
+  const prompt = `"${productName}"을 판매하는 온라인 판매처 4곳을 찾으세요. (공식몰, 오픈마켓 등).
 URL에는 절대 제휴 파라미터(affid, ref 등)를 포함하지 말고 순수 원본 URL(Clean URL)만 수집하세요.
+
+작업 순서 (매우 중요, 반드시 이 순서로 진행):
+1단계: 웹 검색으로 "${productName}"을 판매할 만한 판매처 후보 URL들을 찾으세요.
+2단계: 후보로 찾은 URL들을 반드시 웹 페이지 열람(fetch) 도구로 실제로 열어서 확인하세요. 검색 결과 스니펫만 보고 판단하지 말고, 페이지를 직접 열어 다음을 확인하세요: (a) 페이지가 정상적으로 열리는지(404나 오류 페이지가 아닌지), (b) 그 페이지에 실제로 "${productName}"(또는 매우 근접한 동일 상품)이 표시되어 있는지, (c) 품절/재고없음 표시가 있는지.
+3단계: 직접 열어서 확인이 된 URL만 최종 후보에 포함하세요. 시간이나 횟수 제약으로 일부 URL을 못 열어봤다면, 그 판매처는 최대한 제외하고 확인된 판매처로 채우세요. 4곳을 다 채우기 위해 확인 안 된 URL을 넣어야 한다면, 반드시 "fetched_verified": false로 정직하게 표시하세요.
 
 신품/중고 규칙 (매우 중요):
 0. "${productName}"이 신품(새 제품/신차)이라면, 절대로 중고 거래 플랫폼(중고차 사이트, 중고나라, 당근마켓, 번개장터, 헬로마켓 등)을 판매처로 넣지 마세요. 반드시 제조사 공식몰, 공식 대리점, 또는 신품을 취급하는 온라인 쇼핑몰(오픈마켓의 신품 카테고리 등)만 포함하세요.
 
 URL 선정 규칙 (매우 중요):
-1. 절대로 URL을 추측하거나 지어내지 마세요. 실제 웹 검색 결과에서 실제로 확인한 URL만 사용하세요.
-2. "${productName}" 상품 상세 페이지(구매 버튼이 바로 보이는 페이지) URL을 검색 결과에서 100% 확실하게 확인한 경우에만 "url_type": "detail"로 표시하고 그 URL을 넣으세요.
-3. 조금이라도 확신이 서지 않으면(페이지가 존재하는지 불확실, 검색 결과에 스니펫만 있고 실제 URL 구조를 못 봄, 오래된 정보일 수 있음 등) 절대로 상세 페이지 URL을 만들어내지 말고, 대신 그 판매처 사이트 안에서 "${productName}"을 검색한 결과 페이지 URL(사이트명 + 검색 파라미터 형태, 예: "https://www.판매처.com/search?query=상품명")로 대체하고 "url_type": "search_results"로 표시하세요.
-4. 판단이 애매할 때는 무조건 3번(검색결과 페이지)을 선택하세요. 안전한 쪽으로 판단하는 것이 원칙입니다. 존재하지 않는 페이지로 연결되는 것보다, 검색결과 페이지로 연결되는 것이 훨씬 낫습니다.
+1. 절대로 URL을 추측하거나 지어내지 마세요. 실제로 fetch 도구로 열어서 확인한 URL만 사용하세요.
+2. "${productName}" 상품 상세 페이지(구매 버튼이 바로 보이는 페이지)를 fetch로 직접 열어서 그 상품이 맞다고 확인한 경우에만 "url_type": "detail", "fetched_verified": true로 표시하세요.
+3. fetch로 열어봤는데 그 페이지가 존재하지 않거나(404), 다른 상품이거나, 확인이 안 되면 절대로 그 URL을 상세 페이지로 쓰지 마세요. 대신 그 판매처 사이트 안에서 "${productName}"을 검색한 결과 페이지 URL로 대체하고 "url_type": "search_results"로 표시하세요.
+4. 판단이 애매할 때는 무조건 검색결과 페이지를 선택하세요. 존재하지 않는 페이지로 연결되는 것보다, 검색결과 페이지로 연결되는 것이 훨씬 낫습니다.
 5. 절대로 판매처의 단순 홈페이지(메인 화면) URL만 넣지 마세요.
 
 재고 확인 규칙 (매우 중요):
-6. 검색 결과나 페이지 내용에 "품절", "재고없음", "일시품절", "Sold Out", "단종" 같은 표현이 보이면 그 판매처는 최대한 제외하고 재고가 있어 보이는 다른 판매처로 대체하세요. 4곳 모두 이런 문제가 없는 곳으로 채우는 것이 최우선입니다.
+6. fetch로 열어본 페이지 내용에 "품절", "재고없음", "일시품절", "Sold Out", "단종" 같은 표현이 보이면 그 판매처는 최대한 제외하고 재고가 있어 보이는 다른 판매처로 대체하세요.
 7. 그래도 재고 상태를 확신할 수 없는 판매처가 포함될 수밖에 없다면, "stock_status" 필드에 "in_stock"(재고 확인됨), "uncertain"(확신 불가), "likely_out"(품절 가능성 높음) 중 하나로 정직하게 표시하세요. 절대 무조건 "in_stock"으로 채우지 마세요.
-8. 이건 검색 시점 기준 정보이며 실시간 재고와 다를 수 있다는 점을 감안해 최대한 최근 정보를 우선하세요.
+8. 이건 확인 시점 기준 정보이며 실시간 재고와 다를 수 있다는 점을 감안하세요.
 
 다른 설명 없이 JSON만 응답:
 {
   "sort_basis": "정렬 기준 (예: 상품가+배송비 합산 최저가순)",
   "vendors": [
-    {"name": "판매처명", "price_krw": "가격(배송비 포함여부)", "shipping_kr": "배송정책 요약", "as_kr": "AS/반품 정책 요약", "url": "제휴코드 없는 원본 URL", "url_type": "detail 또는 search_results", "stock_status": "in_stock 또는 uncertain 또는 likely_out"}
+    {"name": "판매처명", "price_krw": "가격(배송비 포함여부)", "shipping_kr": "배송정책 요약", "as_kr": "AS/반품 정책 요약", "url": "제휴코드 없는 원본 URL", "url_type": "detail 또는 search_results", "stock_status": "in_stock 또는 uncertain 또는 likely_out", "fetched_verified": true 또는 false}
   ]
 }
 vendors는 정확히 4개입니다.`;
-  return callClaudeAutoRetry(prompt, true, 2200);
+  return callClaudeAutoRetry(prompt, true, 2600, 1, true);
 }
 
 function AdaptiveAppraisalTest() {
@@ -1297,6 +1322,16 @@ function AdaptiveAppraisalTest() {
                                 <div>
                                   <div className="text-xs font-medium flex items-center gap-1.5">
                                     {v.name}
+                                    {v.url_type === "detail" && v.fetched_verified === true && (
+                                      <span className="jbmono text-xs px-1.5 py-0.5 rounded flex items-center gap-1" style={{ backgroundColor: `${C.verify}18`, color: C.verify, border: `1px solid ${C.verify}44` }}>
+                                        <Check size={10} /> 열람 확인됨
+                                      </span>
+                                    )}
+                                    {v.url_type === "detail" && v.fetched_verified === false && (
+                                      <span className="jbmono text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${C.warn}18`, color: C.warn, border: `1px solid ${C.warn}44` }}>
+                                        미확인 링크
+                                      </span>
+                                    )}
                                     {v.url_type === "search_results" && (
                                       <span className="jbmono text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: C.paperRaised, color: C.textDim, border: `1px solid ${C.borderLight}` }}>
                                         검색결과
