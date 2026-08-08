@@ -258,8 +258,9 @@ async function callClaudeAutoRetry(prompt, useSearch, maxTokens, attempt = 1, us
     const isNonRetryable = e.errorType && NON_RETRYABLE_ERROR_TYPES.has(e.errorType);
     const isKnownTransient = e.errorType && TRANSIENT_ERROR_TYPES.has(e.errorType);
     // web_fetch를 쓰는 호출은 재시도할 때마다 웹검색+최대 여러 페이지 fetch를 통째로 다시 하므로
-    // 비용이 기하급수적으로 늘어남 → 재시도 횟수를 훨씬 보수적으로 제한
-    const maxAttempts = useFetch ? 2 : (isKnownTransient ? 6 : 3);
+    // 비용/시간이 거의 2배씩 뛴다 (실측: 1회 실패 후 재시도로 $3.26, 200초 소진).
+    // 자동 재시도는 아예 하지 않고, 실패하면 사용자가 수동으로 "재시도" 버튼을 누르게 한다.
+    const maxAttempts = useFetch ? 1 : (isKnownTransient ? 6 : 3);
 
     if (isNonRetryable || attempt >= maxAttempts) throw e;
 
@@ -480,7 +481,7 @@ URL 선정 규칙 (매우 중요):
   ]
 }
 vendors는 정확히 4개입니다.`;
-  return callClaudeAutoRetry(prompt, true, 4096, 1, true);
+  return callClaudeAutoRetry(prompt, true, 8192, 1, true);
 }
 
 // AI가 예산 질문(budget_check)을 빠뜨렸을 경우를 대비한 안전장치.
