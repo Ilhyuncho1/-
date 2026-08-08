@@ -462,6 +462,9 @@ async function generateVendorComparison(productName) {
   if (data.error) {
     throw new Error(`판매처 비교 실패: ${data.error}`);
   }
+  if (data._debug) {
+    console.log("[판매처 비교 진단]", data._debug);
+  }
   return data;
 }
 
