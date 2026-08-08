@@ -503,6 +503,7 @@ function AdaptiveAppraisalTest() {
   const [vendorData, setVendorData] = useState({});
   const [vendorLoading, setVendorLoading] = useState({});
   const [vendorError, setVendorError] = useState({});
+  const [vendorElapsed, setVendorElapsed] = useState({});
   const [nickname, setNickname] = useState("");
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileFound, setProfileFound] = useState(false);
@@ -769,12 +770,17 @@ function AdaptiveAppraisalTest() {
   const fetchVendorData = async (recIndex, productName) => {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: true }));
     setVendorError((prev) => ({ ...prev, [recIndex]: null }));
+    setVendorElapsed((prev) => ({ ...prev, [recIndex]: 0 }));
+    const timer = setInterval(() => {
+      setVendorElapsed((prev) => ({ ...prev, [recIndex]: (prev[recIndex] || 0) + 1 }));
+    }, 1000);
     try {
       const v = await generateVendorComparison(productName);
       setVendorData((prev) => ({ ...prev, [recIndex]: v }));
     } catch (e) {
       setVendorError((prev) => ({ ...prev, [recIndex]: `구매처 조회 실패: ${e.message}` }));
     }
+    clearInterval(timer);
     setVendorLoading((prev) => ({ ...prev, [recIndex]: false }));
   };
 
@@ -1337,7 +1343,12 @@ function AdaptiveAppraisalTest() {
                           <AlertCircle size={12} className="shrink-0 mt-0.5" />
                           <span>AI가 직접 페이지를 열어서 확인한 링크지만, 가격비교 사이트 등 일부는 실제 클릭 시 접속 제한이 걸릴 수 있어요. 안 열리면 판매처명으로 직접 검색해보세요.</span>
                         </div>
-                        {vendorLoading[i] && <div className="text-xs jbmono" style={{ color: C.gold }}>Clean URL 수집 중...</div>}
+                        {vendorLoading[i] && (
+                          <div className="text-xs jbmono flex flex-col gap-1" style={{ color: C.gold }}>
+                            <span>판매처 페이지를 하나씩 직접 열어 재고·가격을 확인하는 중... ({vendorElapsed[i] || 0}초 경과)</span>
+                            <span style={{ color: C.textDim }}>정확도를 위해 각 판매처를 실제로 열람하고 있어요. 보통 30~60초 정도 걸릴 수 있습니다.</span>
+                          </div>
+                        )}
                         {!vendorLoading[i] && vendorError[i] && !vendorData[i] && (
                           <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.warn }}>
                             <span className="flex items-center gap-1.5"><AlertCircle size={13} /> {vendorError[i]}</span>
