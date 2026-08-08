@@ -335,16 +335,18 @@ async function generateFastPath(category, buyerType, env, ageRange, gender, cand
   const candidateRule = candidateProduct
     ? `\n정확히 1개의 질문은 이 사람이 이미 염두에 둔 "${candidateProduct}"에 대해 갖고 있는 구체적인 우려사항을 직접 묻는 질문이어야 하며 "candidate_check": true로 표시하세요. options는 실제로 사람들이 걱정할 법한 4가지 구체적 우려사항이어야 합니다.`
     : "";
+  const configRule = `\n정확히 1개의 질문은 "${category}"의 구매 단위/구성을 확인해야 합니다. "${category}"가 세트/번들/개수/사이즈 등 판매 단위가 여러 가지로 갈리는 카테고리인지(예: 골프클럽은 아이언 단품 1개 vs 아이언 5~8개 세트 vs 드라이버·우드·퍼터까지 포함한 풀세트; 타이어는 1개 vs 4개 세트; 침구는 단품 vs 풀세트) 판단하세요. 그렇다면 "몇 개/어떤 구성으로 구매하시겠어요?"를 명확히 물어야 하며 "config_check": true로 표시하세요. 이 부분은 과거 이력만으로 절대 추측하지 말고 반드시 매번 다시 확인하세요 — 카테고리는 같아도 이번엔 다른 구성(예: 지난번엔 단품, 이번엔 세트)을 찾는 것일 수 있습니다. 세트/단위 구분이 없는 카테고리라면 이 질문은 생략하세요.`;
   const prompt = `"${category}" 구매를 고민 중인 사람에게 물어볼 아주 짧은 확인용 질문 경로를 만드세요. 이 사람은 과거 이력상 "${patternInfo.pattern_summary_kr || "일관된 성향"}"이라는 패턴을 계속 보여왔고, 이번에도 그 성향이 이어지는지 가볍게 재확인하는 목적입니다. 처음부터 새로 진단하는 것이 아니라는 점을 감안해 질문을 최소화하세요.
 성향은 "${buyerType}", 구매자 정보는 "${profileNote}", 환경은 "${env.size}, ${householdDesc}"입니다.
 
 반드시 지켜야 할 규칙:
 1. 정확히 1개의 질문은 이 카테고리에 가장 흔한 후회를 예방하는 질문이어야 하며 "regret_check": true로 표시하세요.
-2. 정확히 1개의 질문은 실제 지불 가능한 예산대를 직접 묻는 질문이어야 하며 "budget_check": true로 표시하세요. options는 "${category}"의 실제 시장 가격 분포를 반영한 4개 구간이어야 합니다. 과거 예산 경향("${patternInfo.typical_budget_hint_kr || "정보 없음"}")은 참고만 하고, 사용자가 이번 기준으로 스스로 다시 고르게 하세요.${candidateRule}
+2. 정확히 1개의 질문은 실제 지불 가능한 예산대를 직접 묻는 질문이어야 하며 "budget_check": true로 표시하세요. options는 "${category}"의 실제 시장 가격 분포를 반영한 4개 구간이어야 합니다. 과거 예산 경향("${patternInfo.typical_budget_hint_kr || "정보 없음"}")은 참고만 하고, 사용자가 이번 기준으로 스스로 다시 고르게 하세요.
+3. ${configRule}${candidateRule}
 
-다른 설명 없이 JSON 배열로만 응답, 정확히 ${candidateProduct ? 3 : 2}개 항목:
-[{"question": "...", "options": ["...","...","...","..."], "regret_check": false, "budget_check": false, "candidate_check": false}]`;
-  return callClaudeAutoRetry(prompt, false, 900);
+다른 설명 없이 JSON 배열로만 응답, 정확히 ${candidateProduct ? 4 : 3}개 항목:
+[{"question": "...", "options": ["...","...","...","..."], "regret_check": false, "budget_check": false, "candidate_check": false, "config_check": false}]`;
+  return callClaudeAutoRetry(prompt, false, 1100);
 }
 
 async function generateRecommendation(category, buyerType, env, qa, ageRange, gender, extraNote, history, candidateProduct, fastTrackInfo, nickname) {
