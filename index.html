@@ -198,7 +198,7 @@ async function callClaude(prompt, useSearch, maxTokens, useFetch) {
   };
   const tools = [];
   if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search" });
-  if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 6 });
+  if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 8 });
   if (tools.length > 0) body.tools = tools;
   const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
     method: "POST",
@@ -316,15 +316,16 @@ async function generatePath(category, buyerType, env, ageRange, gender, candidat
   const candidateRule = candidateProduct
     ? `\n4. 정확히 1개의 질문은 이 사람이 이미 염두에 둔 "${candidateProduct}"에 대해 갖고 있는 구체적인 의심/걱정/불확실한 부분을 직접 묻는 질문이어야 하며 "candidate_check": true로 표시하세요. options는 "${candidateProduct}"와 "${category}" 카테고리를 고려했을 때 실제로 사람들이 걱정할 법한 4가지 구체적 우려사항이어야 합니다 (예: 가격, 내구성, 특정 스펙 부족, 타사 대비 약점 등).`
     : "";
+  const configRule = `\n4. "${category}"가 세트/번들/개수/사이즈 등 판매 단위가 여러 가지로 갈리는 카테고리인지 (예: 골프클럽은 단품 아이언 1개 vs 8개 세트, 타이어는 1개 vs 4개 세트, 침구는 단품 vs 풀세트, 가구는 단품 vs 세트) 판단하세요. 그렇다면 정확히 1개의 질문으로 "몇 개/어떤 구성으로 구매하시겠어요?"를 명확히 물어야 하며 "config_check": true로 표시하세요. 이 질문의 options는 그 카테고리에서 실제로 존재하는 구성 단위여야 합니다 (예: 골프 아이언이면 "단품 1개", "5개 세트", "8개 풀세트" 등). 세트/단위 구분이 없는 카테고리(예: 무선청소기, 냉장고)라면 이 질문은 생략하세요.`;
   const prompt = `"${category}" 구매를 고민 중이며 성향은 "${buyerType}", 구매자 정보는 "${profileNote}", 환경은 "${env.size}, ${householdDesc}"인 사람에게 물어볼 질문 경로를 만드세요.
 
 반드시 지켜야 할 규칙:
 1. 정확히 1개의 질문은 이 카테고리에 가장 흔한 후회를 예방하는 질문이어야 하며 "regret_check": true로 표시하세요.
 2. 정확히 1개의 질문은 실제 지불 가능한 예산대를 직접 묻는 질문이어야 하며 "budget_check": true로 표시하세요. 이 질문의 options는 "${category}"의 실제 시장 가격 분포를 반영한 4개 구간(저가~프리미엄)이어야 하며, 성향("${buyerType}")과 무관하게 사용자가 실제로 원하는 가격대를 스스로 선택하게 하세요. 절대 "${buyerType}"이 가성비형이라는 이유로 저가 구간을 유도하는 문구를 쓰지 마세요.
-3. 나머지 질문들은 "${category}"라는 카테고리 고유의 의사결정 요소를 반영해야 합니다 (예: 스마트폰이면 운영체제/생태계, 카메라·배터리 우선순위, 저장용량; 가전이면 설치방식·소음·용량; 가구면 사이즈·소재 등). 카테고리와 무관한 뻔한 질문은 피하세요.${candidateRule}
+3. 나머지 질문들은 "${category}"라는 카테고리 고유의 의사결정 요소를 반영해야 합니다 (예: 스마트폰이면 운영체제/생태계, 카메라·배터리 우선순위, 저장용량; 가전이면 설치방식·소음·용량; 가구면 사이즈·소재 등). 카테고리와 무관한 뻔한 질문은 피하세요.${configRule}${candidateRule}
 
 다른 설명 없이 JSON 배열로만 응답, 정확히 6개 항목:
-[{"question": "...", "options": ["...","...","...","..."], "regret_check": false, "budget_check": false, "candidate_check": false}]`;
+[{"question": "...", "options": ["...","...","...","..."], "regret_check": false, "budget_check": false, "candidate_check": false, "config_check": false}]`;
   return callClaudeAutoRetry(prompt, false, 1500);
 }
 
@@ -352,6 +353,7 @@ async function generateRecommendation(category, buyerType, env, qa, ageRange, ge
   const historyNote = buildHistoryNote(history);
   const budgetEntry = qa.find((x) => x.budget_check);
   const candidateEntry = qa.find((x) => x.candidate_check);
+  const configEntry = qa.find((x) => x.config_check);
   const qaText = qa.map((x, i) => `${i + 1}. ${x.question} → ${x.answer}`).join("\n");
   const extraText = extraNote && extraNote.trim() ? `\n\n[사용자가 직접 추가로 남긴 메모]\n${extraNote.trim()}\n이 메모에 담긴 제약조건(신체조건, 특수 상황 등)이 있다면 반드시 추천에 반영하세요.` : "";
   const budgetInstruction = budgetEntry
@@ -374,6 +376,10 @@ async function generateRecommendation(category, buyerType, env, qa, ageRange, ge
 
 const newVsUsedInstruction = `\n신품/중고 구분이 존재하는 카테고리(자동차, 가전 일부 등)라면: 사용자의 답변이나 메모에서 "중고", "중고차", "리퍼", "리퍼비시" 등을 명시적으로 언급하지 않는 한, 무조건 신품(새 제품/신차) 기준으로만 추천하세요. 중고 거래 플랫폼이나 중고 매물은 절대 recommendations에 포함하지 마세요.`;
 
+  const configInstruction = configEntry
+    ? `\n구매 단위/구성 규칙 (매우 중요): 사용자가 "${configEntry.answer}"라고 명확히 답했습니다. recommendations의 "name"에는 이 구성(개수/세트 여부 등)을 명확히 포함시키세요 (예: 단품이면 제품명만, 세트면 "OO 8개 세트"처럼 명시). "price_range_kr"는 반드시 이 정확한 구성 기준의 실제 시장 가격이어야 합니다 — 절대로 다른 구성(예: 단품 가격인데 세트인 것처럼, 혹은 그 반대로)의 가격을 섞어서 제시하지 마세요.`
+    : `\n구매 단위/구성 규칙 (매우 중요): "${category}"가 세트/개수/사이즈 등으로 구성이 갈리는 카테고리라면(예: 골프클럽, 타이어, 침구, 가구), recommendations의 "name"에 정확히 어떤 구성(단품인지 세트인지, 몇 개인지)을 추천하는지 명시하고, "price_range_kr"도 그 구성 기준의 실제 가격이어야 합니다. 단품 가격과 세트 가격을 혼동하지 마세요.`;
+
   const answerGroundingInstruction = `\n답변 전체 반영 규칙 (매우 중요):
 위 ${qa.length}개 질문-답변 전부가 이 사람이 실제로 준 정보입니다. 예산만 반영하고 나머지 답변을 장식처럼 취급하지 마세요.
 - "why_kr"는 반드시 위 답변 중 최소 2개 이상을 구체적으로 언급하며 왜 그 답변들에 이 제품이 맞는지 설명해야 합니다. "다양한 니즈를 만족합니다" 같은 일반론적 문장은 금지입니다.
@@ -390,6 +396,7 @@ ${budgetInstruction}${historyNote}
 ${candidateInstruction}
 ${fastTrackInstruction}
 ${newVsUsedInstruction}
+${configInstruction}
 ${answerGroundingInstruction}
 
 웹 검색으로 실제 사용자 후기를 찾되 협찬/광고 글은 철저히 제외하세요. 
@@ -422,6 +429,9 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
 async function generateVendorComparison(productName) {
   const prompt = `"${productName}"을 판매하는 온라인 판매처 4곳을 찾으세요. (공식몰, 오픈마켓 등).
 URL에는 절대 제휴 파라미터(affid, ref 등)를 포함하지 말고 순수 원본 URL(Clean URL)만 수집하세요.
+
+구성 일치 규칙 (매우 중요):
+"${productName}"이라는 상품명 안에 개수나 세트 구성(예: "8개 세트", "단품", "4개입" 등)이 명시되어 있다면, 반드시 그 정확한 구성과 일치하는 상품만 찾으세요. 예를 들어 "8개 세트"를 찾는데 fetch로 열어보니 단품(1개)만 판매하는 페이지라면 그건 다른 상품이므로 제외하세요. 가격도 반드시 그 정확한 구성 기준의 가격이어야 합니다 — 단품 가격을 세트 가격인 것처럼, 혹은 그 반대로 혼동해서 적으면 절대 안 됩니다.
 
 작업 순서 (매우 중요, 반드시 이 순서로 진행):
 1단계: 웹 검색으로 "${productName}"을 판매할 만한 판매처 후보 URL들을 찾으세요.
@@ -715,7 +725,7 @@ function AdaptiveAppraisalTest() {
     setStage("analyzing"); setError(null);
     setOpenVendor({}); setVendorData({}); setVendorLoading({}); setVendorError({});
     const qaList = path
-      .map((q, i) => (i in finalAnswers ? { question: q.question, answer: finalAnswers[i], budget_check: !!q.budget_check, candidate_check: !!q.candidate_check } : null))
+      .map((q, i) => (i in finalAnswers ? { question: q.question, answer: finalAnswers[i], budget_check: !!q.budget_check, candidate_check: !!q.candidate_check, config_check: !!q.config_check } : null))
       .filter(Boolean);
     try {
       const r = await generateRecommendation(category.trim(), buyerType, env, qaList, ageRange, gender, note, history, candidateProduct, fastTrackActive ? fastTrackInfo : null, nickname);
