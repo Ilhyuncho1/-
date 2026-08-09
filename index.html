@@ -464,11 +464,11 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
 // 판매처 비교: 이제 Claude의 web_fetch 도구로 페이지를 순차 열람하지 않고,
 // Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
 // (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
-async function generateVendorComparison(productName) {
+async function generateVendorComparison(productName, officialMallUrl) {
   const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "vendor_compare", productName }),
+    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl }),
   });
   const data = await res.json();
   if (data.error) {
@@ -504,6 +504,13 @@ async function ensureRecommendationsExist(result, category, buyerType, env, qaLi
     const budgetText = budgetEntry ? budgetEntry.answer : null;
     const checkResult = await checkProductsExist(names, budgetText).catch(() => ({ results: names.map(() => ({ exists: true })) }));
     const results = Array.isArray(checkResult.results) ? checkResult.results : [];
+
+    // 공식몰에서 확인된 URL을 추천 결과에 붙여둔다 — 이후 판매처 비교에서 최우선 후보로 사용된다.
+    result.recommendations = result.recommendations.map((rec, i) => (
+      results[i] && results[i].official_mall_url
+        ? { ...rec, officialMallUrl: results[i].official_mall_url }
+        : rec
+    ));
 
     const nonExistentNames = result.recommendations
       .map((rec, i) => (results[i] && results[i].exists === false ? rec.name : null))
@@ -832,7 +839,7 @@ function AdaptiveAppraisalTest() {
     setStage("result");
   };
 
-  const fetchVendorData = async (recIndex, productName) => {
+  const fetchVendorData = async (recIndex, productName, officialMallUrl) => {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: true }));
     setVendorError((prev) => ({ ...prev, [recIndex]: null }));
     setVendorElapsed((prev) => ({ ...prev, [recIndex]: 0 }));
@@ -840,7 +847,7 @@ function AdaptiveAppraisalTest() {
       setVendorElapsed((prev) => ({ ...prev, [recIndex]: (prev[recIndex] || 0) + 1 }));
     }, 1000);
     try {
-      const v = await generateVendorComparison(productName);
+      const v = await generateVendorComparison(productName, officialMallUrl);
       setVendorData((prev) => ({ ...prev, [recIndex]: v }));
     } catch (e) {
       setVendorError((prev) => ({ ...prev, [recIndex]: `구매처 조회 실패: ${e.message}` }));
@@ -849,14 +856,14 @@ function AdaptiveAppraisalTest() {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: false }));
   };
 
-  const toggleVendorCompare = (recIndex, productName) => {
+  const toggleVendorCompare = (recIndex, productName, officialMallUrl) => {
     setOpenVendor((prev) => ({ ...prev, [recIndex]: !prev[recIndex] }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) return;
-    fetchVendorData(recIndex, productName);
+    fetchVendorData(recIndex, productName, officialMallUrl);
   };
 
-  const retryVendorCompare = (recIndex, productName) => {
-    fetchVendorData(recIndex, productName);
+  const retryVendorCompare = (recIndex, productName, officialMallUrl) => {
+    fetchVendorData(recIndex, productName, officialMallUrl);
   };
 
   const copyShareLink = () => {
@@ -1394,7 +1401,7 @@ function AdaptiveAppraisalTest() {
 
                     {/* 원본 구매처 4곳 비교 (0% 수수료) */}
                     <button
-                      onClick={() => toggleVendorCompare(i, rec.name)}
+                      onClick={() => toggleVendorCompare(i, rec.name, rec.officialMallUrl)}
                       className="w-full flex items-center justify-between text-xs px-3 py-2.5 rounded transition-all mb-2"
                       style={{ backgroundColor: C.paper, color: C.text, border: `1px solid ${C.borderLight}` }}
                     >
@@ -1418,7 +1425,7 @@ function AdaptiveAppraisalTest() {
                           <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.warn }}>
                             <span className="flex items-center gap-1.5"><AlertCircle size={13} /> {vendorError[i]}</span>
                             <button
-                              onClick={() => retryVendorCompare(i, rec.name)}
+                              onClick={() => retryVendorCompare(i, rec.name, rec.officialMallUrl)}
                               className="px-2 py-1 rounded jbmono"
                               style={{ backgroundColor: C.paperRaised, color: C.text, border: `1px solid ${C.borderLight}` }}
                             >
