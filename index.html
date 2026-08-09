@@ -218,7 +218,7 @@ async function callClaude(prompt, useSearch, maxTokens, useFetch) {
   if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search" });
   if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 5, max_content_tokens: 6000 });
   if (tools.length > 0) body.tools = tools;
-  const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
+  const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -453,7 +453,7 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
 // Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
 // (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
 async function generateVendorComparison(productName) {
-  const res = await fetch("https://pure-appraisal-proxy.ihcho705.workers.dev", {
+  const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "vendor_compare", productName }),
