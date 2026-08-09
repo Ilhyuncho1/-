@@ -215,7 +215,9 @@ async function callClaude(prompt, useSearch, maxTokens, useFetch) {
     messages: [{ role: "user", content: prompt }],
   };
   const tools = [];
-  if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search" });
+  // [원가 절감] 검색 횟수 상한을 걸어 무제한 검색으로 비용이 불어나는 것을 방지합니다.
+  // 리뷰 조사에는 보통 3~4회면 충분해서 품질 저하는 거의 없습니다.
+  if (useSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: 4 });
   if (useFetch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 5, max_content_tokens: 6000 });
   if (tools.length > 0) body.tools = tools;
   const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
@@ -479,27 +481,29 @@ async function generateVendorComparison(productName) {
 }
 
 // 제품 실존 여부를 가볍게(검색 1회) 확인합니다. 추천이 만들어진 직후 호출됩니다.
-async function checkProductExists(productName) {
+// 제품 실존 여부를 가볍게 확인합니다. 추천이 만들어진 직후 호출됩니다.
+// [원가 절감] 제품이 여러 개여도 API 호출을 나누지 않고 한 번에 같이 확인합니다 (Worker 쪽에서 Haiku로 처리).
+async function checkProductsExist(productNames) {
   const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "check_exists", productName }),
+    body: JSON.stringify({ action: "check_exists", productNames }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
 }
 
-// 추천 제품이 실존하는지 가볍게(검색 1회씩) 확인하고, 존재하지 않는 것으로 판단되면
+// 추천 제품이 실존하는지 가볍게 확인하고, 존재하지 않는 것으로 판단되면
 // 그 제품명을 피하도록 지시해서 딱 한 번만 재생성한다. (비용 폭주 방지를 위해 재시도는 최대 1회)
 async function ensureRecommendationsExist(result, category, buyerType, env, qaList, ageRange, gender, extraNote, history, candidateProduct, fastTrackInfo, nickname, attempt = 1) {
   if (!result || !Array.isArray(result.recommendations)) return result;
   try {
-    const checks = await Promise.all(
-      result.recommendations.map((rec) => checkProductExists(rec.name).catch(() => ({ exists: true })))
-    );
+    const names = result.recommendations.map((rec) => rec.name);
+    const checkResult = await checkProductsExist(names).catch(() => ({ results: names.map(() => ({ exists: true })) }));
+    const results = Array.isArray(checkResult.results) ? checkResult.results : [];
     const badNames = result.recommendations
-      .map((rec, i) => (checks[i] && checks[i].exists === false ? rec.name : null))
+      .map((rec, i) => (results[i] && results[i].exists === false ? rec.name : null))
       .filter(Boolean);
 
     if (badNames.length === 0 || attempt >= 2) return result;
