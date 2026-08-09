@@ -1460,6 +1460,9 @@ function AdaptiveAppraisalTest() {
                                     )}
                                   </div>
                                   <div className="text-xs" style={{ color: C.textMuted }}>{v.price_krw} · {v.shipping_kr}</div>
+                                  {v.verification_note_kr && (
+                                    <div className="text-xs mt-0.5" style={{ color: C.warn }}>{v.verification_note_kr}</div>
+                                  )}
                                 </div>
                                 <a
                                   href={v.url} target="_blank" rel="noopener noreferrer"
