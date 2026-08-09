@@ -468,6 +468,40 @@ async function generateVendorComparison(productName) {
   return data;
 }
 
+// 제품 실존 여부를 가볍게(검색 1회) 확인합니다. 추천이 만들어진 직후 호출됩니다.
+async function checkProductExists(productName) {
+  const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "check_exists", productName }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// 추천 제품이 실존하는지 가볍게(검색 1회씩) 확인하고, 존재하지 않는 것으로 판단되면
+// 그 제품명을 피하도록 지시해서 딱 한 번만 재생성한다. (비용 폭주 방지를 위해 재시도는 최대 1회)
+async function ensureRecommendationsExist(result, category, buyerType, env, qaList, ageRange, gender, extraNote, history, candidateProduct, fastTrackInfo, nickname, attempt = 1) {
+  if (!result || !Array.isArray(result.recommendations)) return result;
+  try {
+    const checks = await Promise.all(
+      result.recommendations.map((rec) => checkProductExists(rec.name).catch(() => ({ exists: true })))
+    );
+    const badNames = result.recommendations
+      .map((rec, i) => (checks[i] && checks[i].exists === false ? rec.name : null))
+      .filter(Boolean);
+
+    if (badNames.length === 0 || attempt >= 2) return result;
+
+    const avoidNote = `${extraNote || ""}\n\n[내부 검증 결과] 아래 제품명은 실존 여부가 확인되지 않았으니 절대 다시 추천하지 마세요: ${badNames.join(", ")}`;
+    const retryResult = await generateRecommendation(category, buyerType, env, qaList, ageRange, gender, avoidNote, history, candidateProduct, fastTrackInfo, nickname);
+    return ensureRecommendationsExist(retryResult, category, buyerType, env, qaList, ageRange, gender, avoidNote, history, candidateProduct, fastTrackInfo, nickname, attempt + 1);
+  } catch (e) {
+    return result; // 검증 자체가 실패해도 서비스는 막지 않음
+  }
+}
+
 // AI가 예산 질문(budget_check)을 빠뜨렸을 경우를 대비한 안전장치.
 // 이미 있으면 그대로 두고, 없으면 즉시(추가 API 호출 없이) 일반적인 4단계 가격대 질문을 만들어 채워 넣습니다.
 function ensureBudgetQuestion(path) {
@@ -736,7 +770,8 @@ function AdaptiveAppraisalTest() {
       .map((q, i) => (i in finalAnswers ? { question: q.question, answer: finalAnswers[i], budget_check: !!q.budget_check, candidate_check: !!q.candidate_check, config_check: !!q.config_check } : null))
       .filter(Boolean);
     try {
-      const r = await generateRecommendation(category.trim(), buyerType, env, qaList, ageRange, gender, note, history, candidateProduct, fastTrackActive ? fastTrackInfo : null, nickname);
+      let r = await generateRecommendation(category.trim(), buyerType, env, qaList, ageRange, gender, note, history, candidateProduct, fastTrackActive ? fastTrackInfo : null, nickname);
+      r = await ensureRecommendationsExist(r, category.trim(), buyerType, env, qaList, ageRange, gender, note, history, candidateProduct, fastTrackActive ? fastTrackInfo : null, nickname);
       setResult(r);
       setReportId(genId());
       setStage("teaser"); // 티저(결제/언락 유도) 단계로 이동
@@ -1414,15 +1449,15 @@ function AdaptiveAppraisalTest() {
                       </div>
                     )}
 
-                  <div className="pt-2 text-xs" style={{ color: C.textDim }}>
-                <div className="flex items-center justify-between">
-                  <span>예상 가격대: {rec.price_range_kr}</span>
-                  <span className="jbmono" style={{ color: C.verify }}>✓ Clean URL Verified</span>
-                </div>
-                <div className="mt-1" style={{ fontSize: "10px", color: C.textDim }}>
-                  * 검색 기반 추정치입니다. 정확한 현재 가격은 위 "구매처 4곳 가격 비교"에서 확인하세요.
-                </div>
-              </div>
+                    <div className="pt-2 text-xs" style={{ color: C.textDim }}>
+                      <div className="flex items-center justify-between">
+                        <span>예상 가격대: {rec.price_range_kr}</span>
+                        <span className="jbmono" style={{ color: C.verify }}>✓ Clean URL Verified</span>
+                      </div>
+                      <div className="mt-1" style={{ fontSize: "10px", color: C.textDim }}>
+                        * 검색 기반 추정치입니다. 정확한 현재 가격은 위 "구매처 4곳 가격 비교"에서 확인하세요.
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
