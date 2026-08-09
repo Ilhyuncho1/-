@@ -438,7 +438,7 @@ ${answerGroundingInstruction}
       "why_kr": "이 사람에게 맞는 이유 1문장",
       "cons_kr": ["단점 2개, 각 15자 이내"],
       "pros_kr": ["장점 2개, 각 15자 이내"],
-      "price_range_kr": "예상 가격대",
+      "price_range_kr": "예상 가격대 (예: '80~120만원대'처럼 범위로. 특정 판매처를 확인한 확정가가 아니라 검색 기반 추정 구간임을 감안해 너무 좁게 단정하지 말 것)",
       "tco_note_kr": "연간 예상 유지비 및 필터/전기세 등 소모품 비용 요약 15자 이내",
       "persuasion_3lines": ["가족/배우자 설득 포인트 1", "설득 포인트 2", "설득 포인트 3"],
       "safety_net_kr": "실패 예방 대비책 1문장"
@@ -1414,10 +1414,15 @@ function AdaptiveAppraisalTest() {
                       </div>
                     )}
 
-                    <div className="pt-2 text-xs flex items-center justify-between" style={{ color: C.textDim }}>
-                      <span>예상 가격대: {rec.price_range_kr}</span>
-                      <span className="jbmono" style={{ color: C.verify }}>✓ Clean URL Verified</span>
-                    </div>
+                  <div className="pt-2 text-xs" style={{ color: C.textDim }}>
+                <div className="flex items-center justify-between">
+                  <span>예상 가격대: {rec.price_range_kr}</span>
+                  <span className="jbmono" style={{ color: C.verify }}>✓ Clean URL Verified</span>
+                </div>
+                <div className="mt-1" style={{ fontSize: "10px", color: C.textDim }}>
+                  * 검색 기반 추정치입니다. 정확한 현재 가격은 위 "구매처 4곳 가격 비교"에서 확인하세요.
+                </div>
+              </div>
                   </div>
                 ))}
               </div>
