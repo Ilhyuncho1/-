@@ -337,7 +337,12 @@ async function generatePath(category, buyerType, env, ageRange, gender, candidat
   const candidateRule = candidateProduct
     ? `\n4. 정확히 1개의 질문은 이 사람이 이미 염두에 둔 "${candidateProduct}"에 대해 갖고 있는 구체적인 의심/걱정/불확실한 부분을 직접 묻는 질문이어야 하며 "candidate_check": true로 표시하세요. options는 "${candidateProduct}"와 "${category}" 카테고리를 고려했을 때 실제로 사람들이 걱정할 법한 4가지 구체적 우려사항이어야 합니다 (예: 가격, 내구성, 특정 스펙 부족, 타사 대비 약점 등).`
     : "";
-  const configRule = `\n4. "${category}"가 세트/번들/개수/사이즈 등 판매 단위가 여러 가지로 갈리는 카테고리인지 (예: 골프클럽은 단품 아이언 1개 vs 8개 세트, 타이어는 1개 vs 4개 세트, 침구는 단품 vs 풀세트, 가구는 단품 vs 세트) 판단하세요. 그렇다면 정확히 1개의 질문으로 "몇 개/어떤 구성으로 구매하시겠어요?"를 명확히 물어야 하며 "config_check": true로 표시하세요. 이 질문의 options는 그 카테고리에서 실제로 존재하는 구성 단위여야 합니다 (예: 골프 아이언이면 "단품 1개", "5개 세트", "8개 풀세트" 등). 세트/단위 구분이 없는 카테고리(예: 무선청소기, 냉장고)라면 이 질문은 생략하세요.`;
+  const configRule = `\n4. "${category}"에서 구매 결정에 핵심적인 "판매 단위 구조"가 있는지 판단하고, 있다면 정확히 1개의 질문으로 확인하며 "config_check": true로 표시하세요. 아래 두 유형 중 이 카테고리에 해당하는 쪽을 판단하세요:
+   (a) 사이즈/용량/규격 축 — 한번 정해지면 나중에 바꾸기 어렵고 구매 결정에 필수적인 경우 (예: 캐리어의 기내용/24인치/28인치, 매트리스의 SS/Q/K, 신발의 발사이즈, 자전거의 프레임 사이즈). 이 축이 존재하면 반드시 이것을 질문하세요. options는 그 카테고리에서 실제로 존재하는 사이즈/용량 구분이어야 합니다.
+   (b) 세트/번들 개수 축 — 몇 개가 묶여서 판매되는지가 갈리는 경우 (예: 골프 아이언 단품 1개 vs 5~8개 세트, 타이어 1개 vs 4개 세트, 침구 단품 vs 풀세트).
+   (a)와 (b)가 둘 다 해당되는 카테고리라면 (a) 사이즈/용량 쪽을 우선하세요 — 사이즈가 안 맞으면 아예 못 쓰지만, 개수는 나중에 판매처에서 직접 보고 조절 가능한 경우가 많습니다.
+   단순히 "몇 개 구매하시겠어요?" 처럼 이 사람이 판매처를 직접 보고 결정해도 무방한 수량 질문은 절대 만들지 마세요 — 구매 결정에 실질적으로 중요하지 않은 질문입니다.
+   (a), (b) 둘 다 해당 없는 카테고리(예: 무선청소기, 냉장고)라면 이 질문은 생략하세요.`;
   const prompt = `"${category}" 구매를 고민 중이며 성향은 "${buyerType}", 구매자 정보는 "${profileNote}", 환경은 "${env.size}, ${householdDesc}"인 사람에게 물어볼 질문 경로를 만드세요.
 
 반드시 지켜야 할 규칙:
@@ -356,7 +361,12 @@ async function generateFastPath(category, buyerType, env, ageRange, gender, cand
   const candidateRule = candidateProduct
     ? `\n정확히 1개의 질문은 이 사람이 이미 염두에 둔 "${candidateProduct}"에 대해 갖고 있는 구체적인 우려사항을 직접 묻는 질문이어야 하며 "candidate_check": true로 표시하세요. options는 실제로 사람들이 걱정할 법한 4가지 구체적 우려사항이어야 합니다.`
     : "";
-  const configRule = `\n정확히 1개의 질문은 "${category}"의 구매 단위/구성을 확인해야 합니다. "${category}"가 세트/번들/개수/사이즈 등 판매 단위가 여러 가지로 갈리는 카테고리인지(예: 골프클럽은 아이언 단품 1개 vs 아이언 5~8개 세트 vs 드라이버·우드·퍼터까지 포함한 풀세트; 타이어는 1개 vs 4개 세트; 침구는 단품 vs 풀세트) 판단하세요. 그렇다면 "몇 개/어떤 구성으로 구매하시겠어요?"를 명확히 물어야 하며 "config_check": true로 표시하세요. 이 부분은 과거 이력만으로 절대 추측하지 말고 반드시 매번 다시 확인하세요 — 카테고리는 같아도 이번엔 다른 구성(예: 지난번엔 단품, 이번엔 세트)을 찾는 것일 수 있습니다. 세트/단위 구분이 없는 카테고리라면 이 질문은 생략하세요.`;
+  const configRule = `\n정확히 1개의 질문은 "${category}"에서 구매 결정에 핵심적인 "판매 단위 구조"를 확인해야 합니다. 아래 두 유형 중 이 카테고리에 해당하는 쪽을 판단하세요:
+   (a) 사이즈/용량/규격 축 — 한번 정해지면 나중에 바꾸기 어렵고 구매 결정에 필수적인 경우 (예: 캐리어의 기내용/24인치/28인치, 매트리스의 SS/Q/K, 신발의 발사이즈). 이 축이 존재하면 반드시 이것을 질문하세요.
+   (b) 세트/번들 개수 축 — 몇 개가 묶여서 판매되는지가 갈리는 경우 (예: 골프 아이언 단품 vs 5~8개 세트, 타이어 1개 vs 4개 세트, 침구 단품 vs 풀세트).
+   (a)와 (b)가 둘 다 해당되는 카테고리라면 (a) 사이즈/용량 쪽을 우선하세요 — 사이즈는 나중에 못 바꾸지만, 개수는 판매처에서 직접 보고 조절 가능한 경우가 많습니다.
+   단순히 "몇 개 구매하시겠어요?" 처럼 판매처를 직접 보고 결정해도 무방한 수량 질문은 만들지 마세요.
+   "config_check": true로 표시하세요. 이 부분은 과거 이력만으로 절대 추측하지 말고 반드시 매번 다시 확인하세요. (a), (b) 둘 다 해당 없는 카테고리라면 이 질문은 생략하세요.`;
   const prompt = `"${category}" 구매를 고민 중인 사람에게 물어볼 아주 짧은 확인용 질문 경로를 만드세요. 이 사람은 과거 이력상 "${patternInfo.pattern_summary_kr || "일관된 성향"}"이라는 패턴을 계속 보여왔고, 이번에도 그 성향이 이어지는지 가볍게 재확인하는 목적입니다. 처음부터 새로 진단하는 것이 아니라는 점을 감안해 질문을 최소화하세요.
 성향은 "${buyerType}", 구매자 정보는 "${profileNote}", 환경은 "${env.size}, ${householdDesc}"입니다.
 
@@ -1401,6 +1411,12 @@ function AdaptiveAppraisalTest() {
                         )}
                         {vendorData[i] && (
                           <div className="flex flex-col gap-2">
+                            {vendorData[i].all_verified_failed && (
+                              <div className="text-xs p-2.5 rounded flex items-start gap-1.5 mb-1" style={{ backgroundColor: `${C.warn}12`, color: C.warn, border: `1px solid ${C.warn}44` }}>
+                                <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                                <span>이번엔 판매처 페이지를 직접 열어서 확인하지 못했어요. 아래는 검색 링크이며, 실제 판매 여부와 가격은 직접 확인해주세요.</span>
+                              </div>
+                            )}
                             <div className="text-xs mb-1" style={{ color: C.textDim }}>{vendorData[i].sort_basis} · 재고는 검색 시점 기준이며 실시간과 다를 수 있어요</div>
                             {vendorData[i].vendors.map((v, k) => (
                               <div key={k} className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
