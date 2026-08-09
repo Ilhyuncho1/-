@@ -1217,7 +1217,7 @@ function AdaptiveAppraisalTest() {
         {stage === "analyzing" && (
           <div className="mt-20 flex flex-col items-center text-center">
             <FileSearch size={36} className="animate-pulse mb-4" style={{ color: C.gold }} />
-            <div className="serif text-xl font-semibold">독립 감정 엔진 작동 중</div>
+            <div className="serif text-xl font-semibold">내편랩이 당신의 올바른 선택을 위해 검색 중입니다</div>
             <p className="text-xs mt-2" style={{ color: C.textMuted }}>협찬 및 대가성 블로그/유튜브 후기를 필터링하고 실사용 평판을 정밀 검증합니다...</p>
           </div>
         )}
@@ -1419,6 +1419,12 @@ function AdaptiveAppraisalTest() {
                               <div className="text-xs p-2.5 rounded flex items-start gap-1.5 mb-1" style={{ backgroundColor: `${C.warn}12`, color: C.warn, border: `1px solid ${C.warn}44` }}>
                                 <AlertCircle size={13} className="shrink-0 mt-0.5" />
                                 <span>이번엔 판매처 페이지를 직접 열어서 확인하지 못했어요. 아래는 검색 링크이며, 실제 판매 여부와 가격은 직접 확인해주세요.</span>
+                              </div>
+                            )}
+                            {!vendorData[i].all_verified_failed && Array.isArray(vendorData[i].vendors) && vendorData[i].vendors.length > 0 && vendorData[i].vendors.length < 4 && (
+                              <div className="text-xs p-2.5 rounded flex items-start gap-1.5 mb-1" style={{ backgroundColor: `${C.paperRaised}`, color: C.textMuted, border: `1px solid ${C.borderLight}` }}>
+                                <AlertCircle size={13} className="shrink-0 mt-0.5" style={{ color: C.textDim }} />
+                                <span>이번엔 실제 판매 중임이 확인된 곳이 {vendorData[i].vendors.length}곳뿐이었어요. 나머지 후보는 접속 실패, 품절, 또는 다른 규격/구성으로 판단되어 제외했습니다.</span>
                               </div>
                             )}
                             <div className="text-xs mb-1" style={{ color: C.textDim }}>{vendorData[i].sort_basis} · 재고는 검색 시점 기준이며 실시간과 다를 수 있어요</div>
