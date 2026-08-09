@@ -481,34 +481,47 @@ async function generateVendorComparison(productName) {
 }
 
 // 제품 실존 여부를 가볍게(검색 1회) 확인합니다. 추천이 만들어진 직후 호출됩니다.
-// 제품 실존 여부를 가볍게 확인합니다. 추천이 만들어진 직후 호출됩니다.
+// 제품 실존 여부 + 예산 부합 여부를 가볍게 확인합니다. 추천이 만들어진 직후 호출됩니다.
 // [원가 절감] 제품이 여러 개여도 API 호출을 나누지 않고 한 번에 같이 확인합니다 (Worker 쪽에서 Haiku로 처리).
-async function checkProductsExist(productNames) {
+async function checkProductsExist(productNames, budgetText) {
   const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "check_exists", productNames }),
+    body: JSON.stringify({ action: "check_exists", productNames, budgetText }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
 }
 
-// 추천 제품이 실존하는지 가볍게 확인하고, 존재하지 않는 것으로 판단되면
-// 그 제품명을 피하도록 지시해서 딱 한 번만 재생성한다. (비용 폭주 방지를 위해 재시도는 최대 1회)
+// 추천 제품이 (1) 실존하는지, (2) 실제 가격이 사용자가 고른 예산대에 부합하는지 가볍게
+// 확인하고, 문제가 있으면 그 사실을 알려주며 딱 한 번만 재생성한다. (비용 폭주 방지를 위해 재시도는 최대 1회)
 async function ensureRecommendationsExist(result, category, buyerType, env, qaList, ageRange, gender, extraNote, history, candidateProduct, fastTrackInfo, nickname, attempt = 1) {
   if (!result || !Array.isArray(result.recommendations)) return result;
   try {
     const names = result.recommendations.map((rec) => rec.name);
-    const checkResult = await checkProductsExist(names).catch(() => ({ results: names.map(() => ({ exists: true })) }));
+    const budgetEntry = qaList.find((x) => x.budget_check);
+    const budgetText = budgetEntry ? budgetEntry.answer : null;
+    const checkResult = await checkProductsExist(names, budgetText).catch(() => ({ results: names.map(() => ({ exists: true })) }));
     const results = Array.isArray(checkResult.results) ? checkResult.results : [];
-    const badNames = result.recommendations
+
+    const nonExistentNames = result.recommendations
       .map((rec, i) => (results[i] && results[i].exists === false ? rec.name : null))
       .filter(Boolean);
+    const overBudgetNames = result.recommendations
+      .map((rec, i) => (results[i] && results[i].exists === true && results[i].budget_fit === false ? `${rec.name} (확인된 가격: ${results[i].observed_price_krw || "미상"})` : null))
+      .filter(Boolean);
 
-    if (badNames.length === 0 || attempt >= 2) return result;
+    if ((nonExistentNames.length === 0 && overBudgetNames.length === 0) || attempt >= 2) return result;
 
-    const avoidNote = `${extraNote || ""}\n\n[내부 검증 결과] 아래 제품명은 실존 여부가 확인되지 않았으니 절대 다시 추천하지 마세요: ${badNames.join(", ")}`;
+    const noteParts = [extraNote || ""];
+    if (nonExistentNames.length > 0) {
+      noteParts.push(`[내부 검증 결과] 아래 제품명은 실존 여부가 확인되지 않았으니 절대 다시 추천하지 마세요: ${nonExistentNames.join(", ")}`);
+    }
+    if (overBudgetNames.length > 0) {
+      noteParts.push(`[내부 검증 결과] 아래 제품은 실제 확인된 가격이 사용자가 선택한 예산대("${budgetText}")를 명백히 벗어났습니다. 반드시 그 예산대 안에 실제로 들어오는 다른 제품으로 교체하세요: ${overBudgetNames.join(", ")}`);
+    }
+    const avoidNote = noteParts.join("\n\n");
     const retryResult = await generateRecommendation(category, buyerType, env, qaList, ageRange, gender, avoidNote, history, candidateProduct, fastTrackInfo, nickname);
     return ensureRecommendationsExist(retryResult, category, buyerType, env, qaList, ageRange, gender, avoidNote, history, candidateProduct, fastTrackInfo, nickname, attempt + 1);
   } catch (e) {
