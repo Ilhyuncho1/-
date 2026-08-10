@@ -547,11 +547,11 @@ recommendations는 정확히 2개. 마크다운 없이 순수 JSON만 출력하�
 // 판매처 비교: 이제 Claude의 web_fetch 도구로 페이지를 순차 열람하지 않고,
 // Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
 // (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
-async function generateVendorComparison(productName, officialMallUrl) {
+async function generateVendorComparison(productName, officialMallUrl, includeOverseas) {
   const res = await fetch("https://kindman-proxy.ihcho705.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl }),
+    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl, includeOverseas }),
   });
   const data = await res.json();
   if (data.error) {
@@ -658,6 +658,7 @@ function AdaptiveAppraisalTest() {
   const [vendorLoading, setVendorLoading] = useState({});
   const [vendorError, setVendorError] = useState({});
   const [vendorElapsed, setVendorElapsed] = useState({});
+  const [includeOverseas, setIncludeOverseas] = useState({});
   const [nickname, setNickname] = useState("");
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileFound, setProfileFound] = useState(false);
@@ -931,7 +932,7 @@ function AdaptiveAppraisalTest() {
     setStage("result");
   };
 
-  const fetchVendorData = async (recIndex, productName, officialMallUrl) => {
+  const fetchVendorData = async (recIndex, productName, officialMallUrl, overseasFlag) => {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: true }));
     setVendorError((prev) => ({ ...prev, [recIndex]: null }));
     setVendorElapsed((prev) => ({ ...prev, [recIndex]: 0 }));
@@ -939,7 +940,7 @@ function AdaptiveAppraisalTest() {
       setVendorElapsed((prev) => ({ ...prev, [recIndex]: (prev[recIndex] || 0) + 1 }));
     }, 1000);
     try {
-      const v = await generateVendorComparison(productName, officialMallUrl);
+      const v = await generateVendorComparison(productName, officialMallUrl, !!overseasFlag);
       setVendorData((prev) => ({ ...prev, [recIndex]: v }));
     } catch (e) {
       setVendorError((prev) => ({ ...prev, [recIndex]: `구매처 조회 실패: ${e.message}` }));
@@ -951,11 +952,19 @@ function AdaptiveAppraisalTest() {
   const toggleVendorCompare = (recIndex, productName, officialMallUrl) => {
     setOpenVendor((prev) => ({ ...prev, [recIndex]: !prev[recIndex] }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) return;
-    fetchVendorData(recIndex, productName, officialMallUrl);
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex]);
   };
 
   const retryVendorCompare = (recIndex, productName, officialMallUrl) => {
-    fetchVendorData(recIndex, productName, officialMallUrl);
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex]);
+  };
+
+  // 해외 직구 포함 여부를 바꾸면, 이미 열려있던 결과는 새 기준으로 다시 조회한다.
+  const toggleIncludeOverseas = (recIndex, productName, officialMallUrl, checked) => {
+    setIncludeOverseas((prev) => ({ ...prev, [recIndex]: checked }));
+    if (vendorData[recIndex] || vendorLoading[recIndex]) {
+      fetchVendorData(recIndex, productName, officialMallUrl, checked);
+    }
   };
 
   const copyShareLink = () => {
@@ -1495,6 +1504,14 @@ function AdaptiveAppraisalTest() {
                     )}
 
                     {/* 원본 구매처 4곳 비교 (0% 수수료) */}
+                    <label className="flex items-center gap-1.5 text-xs mb-2 cursor-pointer" style={{ color: C.textMuted }}>
+                      <input
+                        type="checkbox"
+                        checked={!!includeOverseas[i]}
+                        onChange={(e) => toggleIncludeOverseas(i, rec.name, rec.officialMallUrl, e.target.checked)}
+                      />
+                      해외 직구도 포함해서 찾기 (배송기간·관부가세 발생 가능, A/S 불가)
+                    </label>
                     <button
                       onClick={() => toggleVendorCompare(i, rec.name, rec.officialMallUrl)}
                       className="w-full flex items-center justify-between text-xs px-3 py-2.5 rounded transition-all mb-2"
@@ -1563,6 +1580,11 @@ function AdaptiveAppraisalTest() {
                                         검색결과
                                       </span>
                                     )}
+                                    {v.is_overseas === true && (
+                                      <span className="jbmono text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${C.gold}18`, color: C.gold, border: `1px solid ${C.gold}44` }}>
+                                        해외 직구
+                                      </span>
+                                    )}
                                     {v.stock_status === "likely_out" && (
                                       <span className="jbmono text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${C.warn}18`, color: C.warn, border: `1px solid ${C.warn}44` }}>
                                         품절 가능성
@@ -1575,6 +1597,9 @@ function AdaptiveAppraisalTest() {
                                     )}
                                   </div>
                                   <div className="text-xs" style={{ color: C.textMuted }}>{v.price_krw} · {v.shipping_kr}</div>
+                                  {v.is_overseas === true && v.customs_note_kr && (
+                                    <div className="text-xs mt-0.5" style={{ color: C.gold }}>⚠ {v.customs_note_kr}</div>
+                                  )}
                                   {v.verification_note_kr && (
                                     <div className="text-xs mt-0.5" style={{ color: C.warn }}>{v.verification_note_kr}</div>
                                   )}
