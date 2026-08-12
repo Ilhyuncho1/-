@@ -573,11 +573,11 @@ ${answerGroundingCount}
 // 판매처 비교: 이제 Claude의 web_fetch 도구로 페이지를 순차 열람하지 않고,
 // Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
 // (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
-async function generateVendorComparison(productName, officialMallUrl, includeOverseas) {
+async function generateVendorComparison(productName, officialMallUrl, includeOverseas, priceRangeKr) {
   const res = await fetch("https://api.getkindman.com", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl, includeOverseas }),
+    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl, includeOverseas, priceRangeKr }),
   });
   const data = await res.json();
   if (data.error) {
@@ -961,7 +961,7 @@ function AdaptiveAppraisalTest() {
     setStage("result");
   };
 
-  const fetchVendorData = async (recIndex, productName, officialMallUrl, overseasFlag) => {
+  const fetchVendorData = async (recIndex, productName, officialMallUrl, overseasFlag, priceRangeKr) => {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: true }));
     setVendorError((prev) => ({ ...prev, [recIndex]: null }));
     setVendorElapsed((prev) => ({ ...prev, [recIndex]: 0 }));
@@ -969,7 +969,7 @@ function AdaptiveAppraisalTest() {
       setVendorElapsed((prev) => ({ ...prev, [recIndex]: (prev[recIndex] || 0) + 1 }));
     }, 1000);
     try {
-      const v = await generateVendorComparison(productName, officialMallUrl, !!overseasFlag);
+      const v = await generateVendorComparison(productName, officialMallUrl, !!overseasFlag, priceRangeKr);
       setVendorData((prev) => ({ ...prev, [recIndex]: v }));
     } catch (e) {
       setVendorError((prev) => ({ ...prev, [recIndex]: `구매처 조회 실패: ${e.message}` }));
@@ -978,14 +978,14 @@ function AdaptiveAppraisalTest() {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: false }));
   };
 
-  const toggleVendorCompare = (recIndex, productName, officialMallUrl) => {
+  const toggleVendorCompare = (recIndex, productName, officialMallUrl, priceRangeKr) => {
     setOpenVendor((prev) => ({ ...prev, [recIndex]: !prev[recIndex] }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) return;
-    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex]);
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr);
   };
 
-  const retryVendorCompare = (recIndex, productName, officialMallUrl) => {
-    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex]);
+  const retryVendorCompare = (recIndex, productName, officialMallUrl, priceRangeKr) => {
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr);
   };
 
   // 해외 직구 포함 여부를 바꾸면, 이미 열려있던 결과는 새 기준으로 다시 조회한다.
@@ -998,14 +998,14 @@ function AdaptiveAppraisalTest() {
     if (!result || !Array.isArray(result.recommendations)) return;
     result.recommendations.forEach((rec, idx) => {
       if (vendorData[idx] || vendorLoading[idx]) return; // 이미 불러온 건 재요청 안 함
-      fetchVendorData(idx, rec.name, rec.officialMallUrl, !!includeOverseas[idx]);
+      fetchVendorData(idx, rec.name, rec.officialMallUrl, !!includeOverseas[idx], rec.price_range_kr);
     });
   };
 
-  const toggleIncludeOverseas = (recIndex, productName, officialMallUrl, checked) => {
+  const toggleIncludeOverseas = (recIndex, productName, officialMallUrl, checked, priceRangeKr) => {
     setIncludeOverseas((prev) => ({ ...prev, [recIndex]: checked }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) {
-      fetchVendorData(recIndex, productName, officialMallUrl, checked);
+      fetchVendorData(recIndex, productName, officialMallUrl, checked, priceRangeKr);
     }
   };
 
@@ -1550,12 +1550,12 @@ function AdaptiveAppraisalTest() {
                       <input
                         type="checkbox"
                         checked={!!includeOverseas[i]}
-                        onChange={(e) => toggleIncludeOverseas(i, rec.name, rec.officialMallUrl, e.target.checked)}
+                        onChange={(e) => toggleIncludeOverseas(i, rec.name, rec.officialMallUrl, e.target.checked, rec.price_range_kr)}
                       />
                       해외 직구도 포함해서 찾기 (배송기간·관부가세 발생 가능, A/S 불가)
                     </label>
                     <button
-                      onClick={() => toggleVendorCompare(i, rec.name, rec.officialMallUrl)}
+                      onClick={() => toggleVendorCompare(i, rec.name, rec.officialMallUrl, rec.price_range_kr)}
                       className="w-full flex items-center justify-between text-xs px-3 py-2.5 rounded transition-all mb-2"
                       style={{ backgroundColor: C.paper, color: C.text, border: `1px solid ${C.borderLight}` }}
                     >
@@ -1579,7 +1579,7 @@ function AdaptiveAppraisalTest() {
                           <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.warn }}>
                             <span className="flex items-center gap-1.5"><AlertCircle size={13} /> {vendorError[i]}</span>
                             <button
-                              onClick={() => retryVendorCompare(i, rec.name, rec.officialMallUrl)}
+                              onClick={() => retryVendorCompare(i, rec.name, rec.officialMallUrl, rec.price_range_kr)}
                               className="px-2 py-1 rounded jbmono"
                               style={{ backgroundColor: C.paperRaised, color: C.text, border: `1px solid ${C.borderLight}` }}
                             >
@@ -1722,7 +1722,7 @@ function AdaptiveAppraisalTest() {
                         <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.warn }}>
                           <span className="flex items-center gap-1.5"><AlertCircle size={13} /> {vendorError[idx]}</span>
                           <button
-                            onClick={() => retryVendorCompare(idx, rec.name, rec.officialMallUrl)}
+                            onClick={() => retryVendorCompare(idx, rec.name, rec.officialMallUrl, rec.price_range_kr)}
                             className="px-2 py-1 rounded jbmono"
                             style={{ backgroundColor: C.paperRaised, color: C.text, border: `1px solid ${C.borderLight}` }}
                           >
