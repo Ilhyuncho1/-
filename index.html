@@ -685,6 +685,11 @@ function AdaptiveAppraisalTest() {
   const [vendorError, setVendorError] = useState({});
   const [vendorElapsed, setVendorElapsed] = useState({});
   const [includeOverseas, setIncludeOverseas] = useState({});
+  // [해외직구 사전 선택] 결제 직후 자동으로 검색이 시작되므로, "해외직구 포함"을
+  // 검색이 끝난 뒤에 뒤늦게 켜면 처음부터 재검색이 걸려 비용이 두 배로 나가는 문제가
+  // 있었다. 그래서 이 선택은 검색이 시작되기 전(결제 화면)에 미리 받아서, 첫 검색부터
+  // 그 선호도를 반영하도록 한다 — 딱 한 번만 검색하면 되게.
+  const [overseasPreference, setOverseasPreference] = useState(false);
   // ── 유료 상세 리포트(추천 1·2 + 대안 1개, 순서대로 병렬 비교) ──
   // paidReportOpen: 리포트 패널을 펼쳤는지. 실제 결제 연동 전까지는 데모용으로 즉시 펼침.
   const [paidReportOpen, setPaidReportOpen] = useState(false);
@@ -977,8 +982,13 @@ function AdaptiveAppraisalTest() {
   const unlockAndFetchAllVendors = (r) => {
     setPaidReportOpen(true);
     if (!r || !Array.isArray(r.recommendations)) return;
+    // 결제 화면에서 미리 받은 해외직구 선호도를 추천1·2·대안 전부에 동일하게 적용해서
+    // 첫 검색부터 반영한다 — 검색 후 다시 켜서 재검색이 걸리는 일을 없앤다.
+    const initialOverseas = {};
+    r.recommendations.forEach((_, idx) => { initialOverseas[idx] = overseasPreference; });
+    setIncludeOverseas(initialOverseas);
     r.recommendations.forEach((rec, idx) => {
-      fetchVendorData(idx, rec.name, rec.officialMallUrl, false, rec.price_range_kr);
+      fetchVendorData(idx, rec.name, rec.officialMallUrl, overseasPreference, rec.price_range_kr);
     });
   };
 
@@ -1384,6 +1394,15 @@ function AdaptiveAppraisalTest() {
                 <Check size={14} style={{ color: C.verify }} /> 예산과 어긋나는 가격은 자동으로 걸러냄
               </div>
             </div>
+
+            <label className="flex items-center justify-center gap-1.5 text-xs mb-6 cursor-pointer" style={{ color: C.textMuted }}>
+              <input
+                type="checkbox"
+                checked={overseasPreference}
+                onChange={(e) => setOverseasPreference(e.target.checked)}
+              />
+              해외 직구 판매처도 포함해서 찾기 (배송기간·관부가세 발생 가능, A/S 불가)
+            </label>
 
             <button
               onClick={startPaidAnalysis}
