@@ -517,7 +517,9 @@ const RECOMMENDATION_SYSTEM_PROMPT = `당신은 광고·협찬·제휴 수수료
     }
   ]
 }
-recommendations는 정확히 3개. 세 번째 항목(is_paid_alt: true)은 앞의 두 추천과는 다른 제품으로, "가격 비교용 대안"입니다 — 화면에는 처음에 노출되지 않고 유료 리포트에서만 판매처 비교 대상으로 쓰이니, name/brand/price_range_kr은 다른 두 항목만큼 정확하고 실존해야 하지만 나머지 설명 필드(why_kr, cons_kr 등)는 간단히 채워도 됩니다. 첫 번째와 두 번째 항목은 is_paid_alt: false로 하세요.`;
+recommendations는 정확히 3개. 세 번째 항목(is_paid_alt: true)은 앞의 두 추천과는 다른 제품으로, "가격 비교용 대안"입니다 — 화면에는 처음에 노출되지 않고 유료 리포트에서만 판매처 비교 대상으로 쓰이니, name/brand/price_range_kr은 다른 두 항목만큼 정확하고 실존해야 하지만 나머지 설명 필드(why_kr, cons_kr 등)는 간단히 채워도 됩니다. 첫 번째와 두 번째 항목은 is_paid_alt: false로 하세요.
+
+[매우 중요] 모든 recommendations의 "name"은 반드시 판매처가 "하나의 단일 상품"으로 실제로 판매하는 것이어야 합니다. 골프클럽처럼 여러 부품(드라이버·아이언·퍼터·웨지 등)으로 구성되는 카테고리라도, "테일러메이드 드라이버 + 타이틀리스트 아이언 + 오디세이 퍼터"처럼 서로 다른 브랜드 부품을 하나로 조합해서 추천하지 마세요 — 이런 조합은 실제로 그 상태 그대로 파는 판매처가 없어서 가격 비교 자체가 불가능합니다. 대신 다음 중 하나를 따르세요: (a) 한 제조사가 실제로 "정품 풀세트"로 묶어 판매하는 상품 하나만 추천하거나(예: "테일러메이드 스텔스 드라이버+아이언 8종 풀세트"), (b) 여러 부품을 조합해서 추천하고 싶다면 recommendations 항목 자체를 부품별로 나누세요(예: "추천1"은 드라이버 단품, "추천2"는 아이언세트 단품). 사용자에게 "이 조합을 추천한다"고 설명하고 싶으면 why_kr에서 서술로 풀어 쓰고, name/price_range_kr은 항상 그 낱개 상품 하나의 실제 판매 단위와 가격이어야 합니다.`;
 
 async function generateRecommendation(category, buyerType, env, qa, ageRange, gender, extraNote, history, candidateProduct, fastTrackInfo, nickname, onProgress) {
   const householdDesc = buildHouseholdDescription(env);
