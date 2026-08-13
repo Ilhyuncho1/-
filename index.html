@@ -504,7 +504,7 @@ const RECOMMENDATION_SYSTEM_PROMPT = `당신은 광고·협찬·제휴 수수료
   "opening_line_kr": "빠른 진단 모드일 때만 사용자 메시지의 규칙에 따라 작성, 아니면 null",
   "recommendations": [
     {
-      "name": "정확한 실존 제품명", "brand": "브랜드명", "match_score": 0~100 정수,
+      "name": "정확한 실존 제품명 (해외 브랜드는 반드시 '한글표기(영문브랜드명)' 형태로, 예: '지오지아(ZIOZIA) 스트라이프 수트', '테일러메이드(TaylorMade) 스텔스 HD 아이언'. 국내 브랜드는 한글만)", "brand": "브랜드명", "match_score": 0~100 정수,
       "is_user_choice": true 또는 false,
       "why_kr": "이 사람에게 맞는 이유 1문장",
       "cons_kr": ["단점 2개, 각 15자 이내"],
