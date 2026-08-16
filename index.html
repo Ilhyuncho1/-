@@ -586,11 +586,11 @@ ${answerGroundingCount}${naverSnippetsText}
 // 판매처 비교: 이제 Claude의 web_fetch 도구로 페이지를 순차 열람하지 않고,
 // Worker가 후보 페이지들을 직접 병렬로 가져와 요약한 뒤 단일 턴으로 최종 판단만 받습니다.
 // (구성 일치 규칙, 신품/중고 구분, 판매불가 판정 로직 등은 Worker의 buildFinalVendorPrompt에서 동일하게 적용됩니다.)
-async function generateVendorComparison(productName, officialMallUrl, includeOverseas, priceRangeKr) {
+async function generateVendorComparison(productName, officialMallUrl, includeOverseas, priceRangeKr, category) {
   const res = await fetch("https://api.getkindman.com", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl, includeOverseas, priceRangeKr }),
+    body: JSON.stringify({ action: "vendor_compare", productName, officialMallUrl, includeOverseas, priceRangeKr, category }),
   });
   const data = await res.json();
   if (data.error) {
@@ -1032,11 +1032,11 @@ function AdaptiveAppraisalTest() {
     r.recommendations.forEach((_, idx) => { initialOverseas[idx] = overseasPreference; });
     setIncludeOverseas(initialOverseas);
     r.recommendations.forEach((rec, idx) => {
-      fetchVendorData(idx, rec.name, rec.officialMallUrl, overseasPreference, rec.price_range_kr);
+      fetchVendorData(idx, rec.name, rec.officialMallUrl, overseasPreference, rec.price_range_kr, category);
     });
   };
 
-  const fetchVendorData = async (recIndex, productName, officialMallUrl, overseasFlag, priceRangeKr) => {
+  const fetchVendorData = async (recIndex, productName, officialMallUrl, overseasFlag, priceRangeKr, category) => {
     setVendorLoading((prev) => ({ ...prev, [recIndex]: true }));
     setVendorError((prev) => ({ ...prev, [recIndex]: null }));
     setVendorElapsed((prev) => ({ ...prev, [recIndex]: 0 }));
@@ -1044,7 +1044,7 @@ function AdaptiveAppraisalTest() {
       setVendorElapsed((prev) => ({ ...prev, [recIndex]: (prev[recIndex] || 0) + 1 }));
     }, 1000);
     try {
-      const v = await generateVendorComparison(productName, officialMallUrl, !!overseasFlag, priceRangeKr);
+      const v = await generateVendorComparison(productName, officialMallUrl, !!overseasFlag, priceRangeKr, category);
       setVendorData((prev) => ({ ...prev, [recIndex]: v }));
     } catch (e) {
       setVendorError((prev) => ({ ...prev, [recIndex]: `구매처 조회 실패: ${e.message}` }));
@@ -1056,18 +1056,18 @@ function AdaptiveAppraisalTest() {
   const toggleVendorCompare = (recIndex, productName, officialMallUrl, priceRangeKr) => {
     setOpenVendor((prev) => ({ ...prev, [recIndex]: !prev[recIndex] }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) return;
-    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr);
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr, category);
   };
 
   const retryVendorCompare = (recIndex, productName, officialMallUrl, priceRangeKr) => {
-    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr);
+    fetchVendorData(recIndex, productName, officialMallUrl, includeOverseas[recIndex], priceRangeKr, category);
   };
 
   // 해외 직구 포함 여부를 바꾸면, 이미 열려있던 결과는 새 기준으로 다시 조회한다.
   const toggleIncludeOverseas = (recIndex, productName, officialMallUrl, checked, priceRangeKr) => {
     setIncludeOverseas((prev) => ({ ...prev, [recIndex]: checked }));
     if (vendorData[recIndex] || vendorLoading[recIndex]) {
-      fetchVendorData(recIndex, productName, officialMallUrl, checked, priceRangeKr);
+      fetchVendorData(recIndex, productName, officialMallUrl, checked, priceRangeKr, category);
     }
   };
 
