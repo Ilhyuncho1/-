@@ -1677,9 +1677,16 @@ function AdaptiveAppraisalTest() {
                       {vendorData[idx] && !vendorData[idx].all_verified_failed && Array.isArray(vendorData[idx].vendors) && (
                         <div className="flex flex-col gap-2 mt-1">
                           {vendorData[idx].vendors.map((v, k) => (
-                            <div key={k} className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: C.paper, border: `1px solid ${C.border}` }}>
+                            <div key={k} className="flex items-center justify-between p-2 rounded" style={v.verified_official ? { backgroundColor: `${C.gold}10`, border: `1px solid ${C.gold}55` } : { backgroundColor: C.paper, border: `1px solid ${C.border}` }}>
                               <div>
-                                <div className="text-xs font-medium">{v.name}</div>
+                                <div className="text-xs font-medium flex items-center gap-1.5">
+                                  {v.name}
+                                  {v.verified_official && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded jbmono" style={{ backgroundColor: C.gold, color: "#171310" }}>
+                                      공식몰 · 확인됨
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-xs" style={{ color: C.textMuted }}>{v.price_krw} · {v.shipping_kr}</div>
                               </div>
                               <a href={v.url} target="_blank" rel="noopener noreferrer"
